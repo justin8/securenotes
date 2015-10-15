@@ -1,0 +1,183 @@
+#!/bin/bash
+SETTINGS=~/.config/secnotes
+# Expected variables from settings:
+# EMAIL - email of the generated key. Used for all encryption/decryption
+# REPO - git repository of email/fingerprint pairs to trust
+EMAIL=''
+REPO=''
+if [[ -f $SETTINGS ]]; then
+	while read -r line; do declare $line; done < $SETTINGS
+fi
+
+# TODO: record list of key fingerprints along with emails and store them somewhere securely; in the repo?
+#	- save it in a config file?
+#	- how to update this.
+#	- Maybe just store the repo location in a config file in ~/.config or ~/Library
+#		- Then pull from that repo; store keys with email,fingerprint format one per line? attempt to git clone on start
+#		- function to set the repo; shorthand for github repos?
+
+r() { tput setaf 9; }
+g() { tput setaf 10; }
+b() { tput setaf 12; }
+c() { tput sgr0; }
+error() { echo "$(r)Error$(c): $*"; }
+success() { echo "$(g)Success$(c): $*"; }
+
+# Detect and install packages if necessary
+init() {
+	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null; then
+		if uname -a | grep -qi darwin; then
+			if ! which brew &> /dev/null; then
+				ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+				brew doctor
+			fi
+			# TODO: check if OS X tput is as retarded as OS X echo; ncurses is in dupes; tput exists according to apple developer documentation
+			brew install gnupg2
+		elif grep -Ei "(ubuntu|debian)" /etc/os-release; then
+			sudo apt-get install -y gnupg2 ncurses-bin
+		elif grep -i 'arch' /etc/os-release; then
+			sudo pacman -S --noconfirm --needed gnupg2 ncurses
+		else
+			error "Unable to find gpg2 or detect your OS version. Please install gpg2 manually"
+		fi
+	fi
+
+	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null; then
+		error "A problem has occurred while trying to detect gpg2; please ensure it is available in your current environment"
+	fi
+}
+
+grep_email() {
+	grep uid <<<"$1" | sed -E 's/.*<(.*)>.*$/\1/'
+}
+
+grep_keyid() {
+	grep pub <<<"$1" | sed -E 's|.*/([a-zA-Z0-9]+).*$|\1|'
+}
+
+# Check if key is at $KEY_LOCATION return 0 if it exists
+check_for_key() {
+	SECRET_KEYS=$(gpg --list-secret-keys)
+	GPG_EMAIL=$(grep_email "$SECRET_KEYS")
+
+	[[ -z $EMAIL ]] && return 1
+	[[ $GPG_EMAIL == "$EMAIL" ]] && return 0
+	return 1
+}
+
+# Use GPG to generate a key and store the key variables for later use
+generate_key() {
+	if check_for_key; then
+		echo "A key has already been generated. Are you sure you want to continue? [y/N]"
+		read -r response
+		case $response in
+			y|Y)echo '';;
+			*)exit 1;;
+		esac
+	fi
+
+	NEW_KEY=$(gpg --gen-key)
+	KEY_ID=$(grep_keyid "$NEW_KEY")
+	EMAIL=$(grep_email "$NEW_KEY")
+
+	# TODO: Should we clear settings?
+	# depends if other settings are generated in the future
+	echo "KEY_ID=$KEY_ID" > "$SETTINGS"
+	echo "EMAIL=$EMAIL" >> "$SETTINGS"
+	success "The new key has been generated and saved successfully"
+}
+
+encrypt_message() {
+	if [[ -z $EMAIL ]]; then
+		echo "Cannot find a stored identity! Please generate a key first with '$(basename "$0") -g'"
+		exit 1
+	fi
+	# ensure $KEY exists
+	# move key check out to function?
+	# function for finding recipient key
+		# can check in that function if the key is local; if not, look up and download key.
+		# Check if key is in the repo for encrypting. Add a --force option otherwise?
+		# maybe split it out to multiple functions?
+}
+
+# TODO: What do we want to do with the gpg decryption output? who signed it, etc
+decrypt_message() {
+	# Read from stdin
+	if [[ $FILE == - ]]; then
+		# File is stdin
+		GPG_OUT=$(gpg 3>&1 1>&2 2>&3)
+		rc=$?
+	elif [[ -n $FILE ]]; then
+		[[ ! -f $FILE ]] && error "Please specify a valid file" && exit 1
+		# File is a file
+		GPG_OUT=$(gpg 3>&1 1>&2 2>&3 < "$FILE")
+		rc=$?
+	else
+		# No file specified
+		echo "Please paste the message to be decrypted below:"
+		INPUT=''
+		while read -r line; do
+			[[ -z $INPUT ]] && INPUT="$line" || INPUT="$INPUT"$'\n'"$line"
+			[[ $line == '-----END PGP MESSAGE-----' ]] && break
+		done
+		echo
+		echo ----------------------------------------------------------------
+		#echo ----------------------------------------------------------------
+		echo
+		echo "$(b)Decrypted message$(c):"
+		GPG_OUT=$(gpg 3>&1 1>&2 2>&3 <<<"$INPUT")
+		rc=$?
+	fi
+
+	3>&-
+	if [[ $rc -ne 0 ]]; then
+		error "Failed to decrypt message!"
+		echo "$GPG_OUT"
+	fi
+	return $rc
+}
+
+# set a git repo to use for validating fingerprints
+set_keystore() {
+	REPO=$1
+
+}
+
+usage() {
+	cat <<-EOF
+	Usage: $(basename "$(readlink "$0")") [options]
+
+	With nothing specified the tool will default to decrypting a message.
+
+	The message to be decrypted/encrypted will be requested on the terminal.
+	If you wish to decrypt/encrypt from stdin, use '-f -'. To use a file
+	specify '-f \$FILENAME'.
+
+	Options:
+	 -h Show this $(b)H$(c)elp
+	 -e $(b)E$(c)ncrypt a message (typed/pasted in. file/stdin with '-f')
+	 -f Specify a $(b)F$(c)ile. Specifying '-' will use stdin
+	 -g $(b)G$(c)enerate a key pair; This should only be needed once
+	 -s $(b)S$(c)et a git repository to use for verifying key IDs
+	EOF
+}
+
+init
+
+FILE=''
+TASK=decrypt_message
+while getopts ":hgdes:f:" OPTION
+do
+	case $OPTION in
+		h) usage; exit 0 ;;
+		g) TASK=generate_key ;;
+		e) TASK=encrypt_message ;;
+		f) FILE=$OPTARG ;;
+		s) TASK=set_keystore "$OPTARG" ;;
+		?) usage; exit 1;;
+	esac
+done
+shift $(( OPTIND -1 ))
+
+$TASK
+
