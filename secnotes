@@ -43,7 +43,7 @@ init() {
 		fi
 	fi
 
-	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null || which haveged &>/dev/null; then
+	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null || ! which haveged &>/dev/null; then
 		error "A problem has occurred while trying to detect gpg2 and dependencies; please ensure it is available in your current environment"
 	fi
 
