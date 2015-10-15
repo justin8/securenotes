@@ -21,24 +21,24 @@ error() { echo "$(r)Error$(c): $*" >&2; }
 warning() { echo "$(y)Warning$(c): $*" >&2; }
 success() { echo "$(g)Success$(c): $*" >&2; }
 
-# Update before entering any functions; makes it easier to pass all options through
-# Skip updates if --no-update is the first uption
-if [[ $1 == '--no-update' ]]; then
+# Handle updates at the start; less things to break beforehand if we need to push updates
+if [[ $1 == '--update' ]]; then
 	shift
-else
 	DIR="$(dirname "$(readlink -f "$0")")"
 	UPDATE=$(git -C $DIR pull 2>&1)
 	rc=$?
-	if [[ $UPDATE != 'Already up-to-date.' ]]; then
-		if [[ $rc == 0 ]]; then
-			"$DIR/secnotes" $*
-			exit $?
+	if [[ $rc == 0 ]]; then
+		if [[ $UPDATE != 'Already up-to-date.' ]]; then
+			success 'Updated to latest version!'
 		else
-			warning 'Failed to auto-update. Continuing anyway...'
+			success "$UPDATE"
 		fi
+	else
+		error "Failed to update!"
+		echo "$UPDATE"
 	fi
+	exit $rc
 fi
-
 
 # Detect and install packages if necessary
 init() {
@@ -295,7 +295,7 @@ set_keystore() {
 	fi
 
 	handler() {
-		error 'Failed to clone keystore!'
+		error 'Failed to sync keystore!'
 		exit 1
 	}
 
@@ -309,6 +309,7 @@ set_keystore() {
 
 	set +e
 	trap - SIGTERM SIGINT SIGQUIT EXIT
+	success 'Synced keystore.'
 	return 0
 }
 
