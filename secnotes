@@ -21,6 +21,25 @@ error() { echo "$(r)Error$(c): $*" >&2; }
 warning() { echo "$(y)Warning$(c): $*" >&2; }
 success() { echo "$(g)Success$(c): $*" >&2; }
 
+# Update before entering any functions; makes it easier to pass all options through
+# Skip updates if --no-update is the first uption
+if [[ $1 == '--no-update' ]]; then
+	shift
+else
+	DIR="$(dirname "$(readlink -f "$0")")"
+	UPDATE=$(git -C $DIR pull 2>&1)
+	rc=$?
+	if [[ $UPDATE != 'Already up-to-date.' ]]; then
+		if [[ $rc == 0 ]]; then
+			"$DIR/secnotes" $*
+			exit $?
+		else
+			warning 'Failed to auto-update. Continuing anyway...'
+		fi
+	fi
+fi
+
+
 # Detect and install packages if necessary
 init() {
 	local GPG_OUT
