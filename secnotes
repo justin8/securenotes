@@ -1,6 +1,8 @@
 #!/bin/bash
+MASTER_KEY='6D806CDF'
 SETTINGS=~/.config/secnotes
 # Expected variables from settings:
+# KEY_ID - the key ID to use for this user
 # EMAIL - email of the generated key. Used for all encryption/decryption
 # REPO - git repository of email/fingerprint pairs to trust
 EMAIL=''
@@ -9,34 +11,32 @@ if [[ -f $SETTINGS ]]; then
 	while read -r line; do declare $line; done < $SETTINGS
 fi
 
-# TODO: record list of key fingerprints along with emails and store them somewhere securely; in the repo?
-#	- save it in a config file?
-#	- how to update this.
-#	- Maybe just store the repo location in a config file in ~/.config or ~/Library
-#		- Then pull from that repo; store keys with email,fingerprint format one per line? attempt to git clone on start
-#		- function to set the repo; shorthand for github repos?
-
-r() { tput setaf 9; }
-g() { tput setaf 10; }
-b() { tput setaf 12; }
+r() { tput setaf 1; tput bold; }
+g() { tput setaf 2; tput bold; }
+y() { tput setaf 3; tput bold; }
+b() { tput setaf 4; tput bold; }
 c() { tput sgr0; }
 error() { echo "$(r)Error$(c): $*"; }
+warning() { echo "$(y)Warning$(c): $*"; }
 success() { echo "$(g)Success$(c): $*"; }
 
 # Detect and install packages if necessary
 init() {
-	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null; then
+	local GPG_OUT
+	mkdir -p $(dirname "$SETTINGS")
+	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null || ! which haveged &>/dev/null; then
 		if uname -a | grep -qi darwin; then
 			if ! which brew &> /dev/null; then
 				ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 				brew doctor
 			fi
+			# TODO: see if haveged exists on OS X
 			# TODO: check if OS X tput is as retarded as OS X echo; ncurses is in dupes; tput exists according to apple developer documentation
 			brew install gnupg2
 		elif grep -Ei "(ubuntu|debian)" /etc/os-release; then
-			sudo apt-get install -y gnupg2 ncurses-bin
+			sudo apt-get install -y gnupg2 ncurses-bin haveged
 		elif grep -i 'arch' /etc/os-release; then
-			sudo pacman -S --noconfirm --needed gnupg2 ncurses
+			sudo pacman -S --noconfirm --needed gnupg2 ncurses haveged
 		else
 			error "Unable to find gpg2 or detect your OS version. Please install gpg2 manually"
 		fi
@@ -45,29 +45,46 @@ init() {
 	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null; then
 		error "A problem has occurred while trying to detect gpg2; please ensure it is available in your current environment"
 	fi
+
+	# Trust master key
+	if ! gpg2 --list-keys | grep -q $MASTER_KEY; then
+		warning "Master key not found. Importing..."
+		GPG_OUT=$(gpg2 --recv-key $MASTER_KEY 2>&1)
+		rc=$?
+		[[ $rc -ne 0 ]] && error "Failed retrieving master key!" && echo "$GPG_OUT" && exit $rc
+	fi
+
+	if ! gpg2 --list-keys --list-options show-uid-validity | grep -a1 $MASTER_KEY | grep -q 'ultimate'; then
+		warning "Master key not ultimately trust. Fixing..."
+		OWNERTRUST=$(gpg2 --list-keys --with-fingerprint --with-colons | grep -A1 'ops@c9.io' | tail -n1 | tr -s : : | cut -d: -f2):6:
+		GPG_OUT=$(gpg2 --import-ownertrust <<<"$OWNERTRUST")
+	fi
 }
 
 grep_email() {
-	grep uid <<<"$1" | sed -E 's/.*<(.*)>.*$/\1/'
+	grep uid | sed -E 's/.*<(.*)>.*$/\1/'
 }
 
 grep_keyid() {
-	grep pub <<<"$1" | sed -E 's|.*/([a-zA-Z0-9]+).*$|\1|'
+	grep pub | sed -E 's|.*/([a-zA-Z0-9]+).*$|\1|'
 }
 
 # Check if key is at $KEY_LOCATION return 0 if it exists
-check_for_key() {
-	SECRET_KEYS=$(gpg --list-secret-keys)
-	GPG_EMAIL=$(grep_email "$SECRET_KEYS")
-
+check_for_secret_key() {
 	[[ -z $EMAIL ]] && return 1
+	[[ -z $KEY_ID ]] && return 1
+
+	SECRET_KEYS=$(gpg2 --list-secret-keys)
+	GPG_EMAIL=$(grep -A1 "$KEY_ID" <<<"$SECRET_KEYS" | grep_email)
 	[[ $GPG_EMAIL == "$EMAIL" ]] && return 0
 	return 1
 }
 
 # Use GPG to generate a key and store the key variables for later use
 generate_key() {
-	if check_for_key; then
+	# TODO: May not work in docker containers. Need to test
+	ps aux | grep haveged|grep -qv grep || sudo haveged
+	if check_for_secret_key; then
 		echo "A key has already been generated. Are you sure you want to continue? [y/N]"
 		read -r response
 		case $response in
@@ -76,56 +93,133 @@ generate_key() {
 		esac
 	fi
 
-	NEW_KEY=$(gpg --gen-key)
-	KEY_ID=$(grep_keyid "$NEW_KEY")
-	EMAIL=$(grep_email "$NEW_KEY")
+	# TODO: Use a key settings file with --gen-key --batch over stdin to support old gpg on Ubuntu/OSX
+	# use `read -s variable` for it
+	NEW_KEY=$(gpg2 --gen-key)
+	KEY_ID=$(grep_keyid <<<"$NEW_KEY")
+	EMAIL=$(grep_email <<<"$NEW_KEY")
+	[[ -z $KEY_ID ]] && error 'Failed to generate key!' && return 1
+	[[ -z $EMAIL ]] && error 'Failed to generate key!' && return 1
+	GPG_OUT=$(gpg --send-key "$KEY_ID" 2>&1)
+	rc=$?
+	[[ $rc -ne 0 ]] && error 'Failed to upload key to server!' && return $rc
 
-	# TODO: Should we clear settings?
-	# depends if other settings are generated in the future
+	# Save settings for future use
 	echo "KEY_ID=$KEY_ID" > "$SETTINGS"
 	echo "EMAIL=$EMAIL" >> "$SETTINGS"
 	success "The new key has been generated and saved successfully"
+	return 0
+}
+
+# TODO: Implement this.
+get_keyid_from_email() {
+	# Probably just check in git database; otherwise fail. Just use public key servers for lookup/download of keys
+	# it's hard to revoke keys on the public servers unless you have the revocation certificate,
+	# and even then searches can only return the first result for the email; making it possible to get the wrong key
+	# (MAYBE) Fall back to keyserver lookup
+
+	# return key ID
+	echo DC734EC8
+	return 0
+}
+
+# TODO: Check if key is in the repo for encrypting. Add a --force option otherwise?
+get_public_key() {
+	local GPG_OUT
+	local rc=0
+	keyid="$1"
+	# check if key is already in keyring
+	if gpg2 --list-keys | grep -q "$keyid"; then
+		GPG_OUT=$(gpg2 --recv-key "$keyid")
+		rc=$?
+		[[ $rc -ne 0 ]] && error "Unable to retrieve key" && echo "$GPG_OUT"
+		return $rc
+	fi
+	return 0
 }
 
 encrypt_message() {
-	if [[ -z $EMAIL ]]; then
-		echo "Cannot find a stored identity! Please generate a key first with '$(basename "$0") -g'"
+	local GPG_OUT
+	local INPUT
+	local KEYID
+	local rc=0
+
+	if ! check_for_secret_key; then
+		error "You must generate a key before being able to encrypt"
 		exit 1
 	fi
-	# ensure $KEY exists
-	# move key check out to function?
-	# function for finding recipient key
-		# can check in that function if the key is local; if not, look up and download key.
-		# Check if key is in the repo for encrypting. Add a --force option otherwise?
-		# maybe split it out to multiple functions?
+
+	[[ -z $RECIPIENT ]] && error "No recipient specified! This shouldn't happen." && exit 1
+
+	if [[ $RECIPIENT =~ @ ]]; then
+		KEYID=$(get_keyid_from_email $RECIPIENT)
+	else
+		KEYID=$RECIPIENT
+	fi
+	get_public_key "$KEYID"
+
+	if [[ $FILE == - ]]; then
+		# File is stdin
+		GPG_OUT=$(gpg2 -r $RECIPIENT --armor --encrypr 3>&1 1>&2 2>&3)
+		rc=$?
+	elif [[ -n $FILE ]]; then
+		# File is a file
+		[[ ! -f $FILE ]] && error "Please specify a valid file" && exit 1
+		GPG_OUT=$(gpg2 -r $RECIPIENT --armor --encrypt 3>&1 1>&2 2>&3 < "$FILE")
+		rc=$?
+	else
+		# No file specified
+		echo "Please paste the message to be encrypted below. press ctrl+d to end the message:"
+		INPUT=$(cat)
+		echo
+		echo ----------------------------------------------------------------
+		echo
+		echo "$(b)Encrypted message$(c):"
+		GPG_OUT=$(gpg2 -r $RECIPIENT --armor --encrypt 3>&1 1>&2 2>&3 <<<"$INPUT")
+		rc=$?
+	fi
+
+	3>&-
+	if [[ $rc -ne 0 ]]; then
+		error "Failed to decrypt message!"
+		echo "$GPG_OUT"
+	fi
+	return $rc
+
 }
 
 # TODO: What do we want to do with the gpg decryption output? who signed it, etc
+# Currently outputting it on errors, supressing on success. Should we verify the ID is in the git repo?
 decrypt_message() {
-	# Read from stdin
+	local GPG_OUT
+	local INPUT
+	local rc=0
+	if ! check_for_secret_key; then
+		error "You must generate a key before being able to decrypt"
+		exit 1
+	fi
+
 	if [[ $FILE == - ]]; then
 		# File is stdin
-		GPG_OUT=$(gpg 3>&1 1>&2 2>&3)
+		GPG_OUT=$(gpg2 3>&1 1>&2 2>&3)
 		rc=$?
 	elif [[ -n $FILE ]]; then
 		[[ ! -f $FILE ]] && error "Please specify a valid file" && exit 1
 		# File is a file
-		GPG_OUT=$(gpg 3>&1 1>&2 2>&3 < "$FILE")
+		GPG_OUT=$(gpg2 3>&1 1>&2 2>&3 < "$FILE")
 		rc=$?
 	else
 		# No file specified
 		echo "Please paste the message to be decrypted below:"
-		INPUT=''
 		while read -r line; do
 			[[ -z $INPUT ]] && INPUT="$line" || INPUT="$INPUT"$'\n'"$line"
 			[[ $line == '-----END PGP MESSAGE-----' ]] && break
 		done
 		echo
 		echo ----------------------------------------------------------------
-		#echo ----------------------------------------------------------------
 		echo
 		echo "$(b)Decrypted message$(c):"
-		GPG_OUT=$(gpg 3>&1 1>&2 2>&3 <<<"$INPUT")
+		GPG_OUT=$(gpg2 3>&1 1>&2 2>&3 <<<"$INPUT")
 		rc=$?
 	fi
 
@@ -154,11 +248,12 @@ usage() {
 	specify '-f \$FILENAME'.
 
 	Options:
-	 -h Show this $(b)H$(c)elp
-	 -e $(b)E$(c)ncrypt a message (typed/pasted in. file/stdin with '-f')
-	 -f Specify a $(b)F$(c)ile. Specifying '-' will use stdin
-	 -g $(b)G$(c)enerate a key pair; This should only be needed once
-	 -s $(b)S$(c)et a git repository to use for verifying key IDs
+	 -h         Show this $(b)H$(c)elp
+	 -e email   $(b)E$(c)ncrypt a message (typed/pasted in. file/stdin with '-f')
+	            You must specify the email of the person you intend to send this to
+	 -f file    Specify a $(b)F$(c)ile. Specifying '-' will use stdin
+	 -g         $(b)G$(c)enerate a key pair; This should only be needed once
+	 -s repo    $(b)S$(c)et a git repository to use for verifying key IDs
 	EOF
 }
 
@@ -166,18 +261,17 @@ init
 
 FILE=''
 TASK=decrypt_message
-while getopts ":hgdes:f:" OPTION
+while getopts ":hgde:s:f:" OPTION
 do
 	case $OPTION in
 		h) usage; exit 0 ;;
 		g) TASK=generate_key ;;
-		e) TASK=encrypt_message ;;
+		e) TASK=encrypt_message; RECIPIENT="$OPTARG" ;;
 		f) FILE=$OPTARG ;;
-		s) TASK=set_keystore "$OPTARG" ;;
-		?) usage; exit 1;;
+		s) TASK=set_keystore; KEYSTORE="$OPTARG" ;;
+		?) usage; error "Unknown option"; exit 1;;
 	esac
 done
 shift $(( OPTIND -1 ))
 
 $TASK
-
