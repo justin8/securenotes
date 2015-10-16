@@ -78,6 +78,7 @@ init() {
 		warning "Master key not ultimately trusted. Fixing..."
 		OWNERTRUST=$(gpg2 --list-keys --with-fingerprint --with-colons 2>&1 | grep -A1 'ops@c9.io' | tail -n1 | tr -s : : | cut -d: -f5):6:
 		GPG_OUT=$(gpg2 --import-ownertrust <<<"$OWNERTRUST" 2>&1)
+		[[ $? -ne 0 ]] && error "Failed to trust master key!" && echo "$GPG_OUT" && exit 1
 	fi
 
 	if [[ -d $KEYSTORE_LOCATION ]]; then
