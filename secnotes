@@ -123,7 +123,7 @@ generate_key() {
 	NEW_KEY=$(gpg2 --gen-key)
 	KEY_ID=$(grep_keyid <<<"$NEW_KEY")
 	EMAIL=$(grep_email <<<"$NEW_KEY")
-	EMAIL=${EMAIL,,}
+	EMAIL=$(tr '[:upper:]' '[:lower:]' <<<"$EMAIL")
 	[[ -z $KEY_ID ]] && error 'Failed to generate key!' && return 1
 	[[ -z $EMAIL ]] && error 'Failed to generate key!' && return 1
 	GPG_OUT=$(gpg2 --send-key "$KEY_ID" 2>&1)
@@ -153,7 +153,7 @@ generate_key() {
 }
 
 get_keyid_from_email() {
-	local TARGET=${1,,}
+	local TARGET=$(tr '[:upper:]' '[:lower:]' <<<"$1")
 	local fullname="$KEYSTORE_LOCATION/$TARGET"
 	local shortname=$(find "$KEYSTORE_LOCATION" -maxdepth 1 -iname "$TARGET*")
 
