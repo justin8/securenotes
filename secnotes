@@ -81,10 +81,10 @@ init() {
 	fi
 
 	if [[ -d $KEYSTORE_LOCATION ]]; then
-		git -C "$KEYSTORE_LOCATION" git fetch --all &>/dev/null
-		git -C "$KEYSTORE_LOCATION" git reset --hard &>/dev/null
-		git -C "$KEYSTORE_LOCATION" git checkout master &>/dev/null
-		git -C "$KEYSTORE_LOCATION" git reset --hard origin/master &>/dev/null
+		git -C "$KEYSTORE_LOCATION" fetch --all &>/dev/null
+		git -C "$KEYSTORE_LOCATION" reset --hard &>/dev/null
+		git -C "$KEYSTORE_LOCATION" checkout master &>/dev/null
+		git -C "$KEYSTORE_LOCATION" reset --hard origin/master &>/dev/null
 	fi
 }
 
