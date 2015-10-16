@@ -212,14 +212,16 @@ encrypt_message() {
 	get_public_key "$KEYID"
 	[[ $? -ne 0 ]] && exit 1
 
+	echo "Sending to: $(gpg --list-keys | grep -A1 $KEYID | grep '@' | sed -E 's/.*<(.*)>.*/\1/') - $KEYID"
+
 	if [[ $FILE == - ]]; then
 		# File is stdin
-		GPG_OUT=$(gpg2 -r $RECIPIENT --armor --encrypt 3>&1 1>&2 2>&3)
+		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 3>&1 1>&2 2>&3)
 		rc=$?
 	elif [[ -n $FILE ]]; then
 		# File is a file
 		[[ ! -f $FILE ]] && error "Please specify a valid file" && exit 1
-		GPG_OUT=$(gpg2 -r $RECIPIENT --armor --encrypt 3>&1 1>&2 2>&3 < "$FILE")
+		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 3>&1 1>&2 2>&3 < "$FILE")
 		rc=$?
 	else
 		# No file specified
@@ -229,7 +231,7 @@ encrypt_message() {
 		echo ----------------------------------------------------------------
 		echo
 		echo "$(b)Encrypted message$(c):"
-		GPG_OUT=$(gpg2 -r $RECIPIENT --armor --encrypt 3>&1 1>&2 2>&3 <<<"$INPUT")
+		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 3>&1 1>&2 2>&3 <<<"$INPUT")
 		rc=$?
 	fi
 
