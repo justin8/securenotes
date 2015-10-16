@@ -37,5 +37,7 @@ handler() {
 trap handler EXIT SIGINT SIGQUIT SIGTERM
 set -e
 
+# TODO: Look up by username?
+# TODO: Ability to merge in branch to master and push? Might be hard with github
 gpg2 -u $MASTER_KEY --sign-key $KEY
 gpg2 --send-key $KEY
