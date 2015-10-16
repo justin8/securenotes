@@ -243,7 +243,6 @@ encrypt_message() {
 
 	GPG_ERR=$(mktemp)
 	trap handler EXIT SIGINT SIGQUIT SIGTERM
-	# TODO: Use clipit to save to clipboard
 	if [[ $FILE == - ]]; then
 		# File is stdin
 		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 2>$GPG_ERR)
@@ -266,8 +265,11 @@ encrypt_message() {
 	fi
 
 	if which clipit &>/dev/null; then
+		echo "This message should be in your clipboard now"
+		echo
 		echo "GPG_OUT" | clipit
 	fi
+
 	echo "$GPG_OUT"
 	if [[ $rc -ne 0 ]]; then
 		error "Failed to encrypt message!"
