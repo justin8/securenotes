@@ -6,6 +6,4 @@ TODO: Script for signing new keys, pushing them and accepting the merge request?
 
 TODO: Git configuration missing can break the push; Auto detect?
 
-TODO: Output git errors on setting up keystore/etc
-
 TODO: Print errors on owner trust gpg
