@@ -284,6 +284,7 @@ decrypt_message() {
 
 # set a git repo to use for validating fingerprints
 set_keystore() {
+	local GIT_OUT
 	[[ -z $KEYSTORE ]] && error "No keystore specified! This shouldn't happen" && exit 1
 	if [[ -d $KEYSTORE_LOCATION ]]; then
 		error "A keystore has already been specified. Are you sure you wish to overwrite it? [y/N]"
@@ -297,6 +298,7 @@ set_keystore() {
 
 	handler() {
 		error 'Failed to sync keystore!'
+		echo "$GIT_OUT"
 		exit 1
 	}
 
@@ -306,7 +308,7 @@ set_keystore() {
 	if ! [[ $KEYSTORE =~ (@|:) ]]; then
 		KEYSTORE="git@github.com:$KEYSTORE"
 	fi
-	git clone "$KEYSTORE" "$KEYSTORE_LOCATION" &>/dev/null
+	GIT_OUT=$(git clone "$KEYSTORE" "$KEYSTORE_LOCATION" 2>&1)
 
 	set +e
 	trap - SIGTERM SIGINT SIGQUIT EXIT
