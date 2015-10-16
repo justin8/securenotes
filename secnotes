@@ -264,11 +264,13 @@ encrypt_message() {
 		rc=$?
 	fi
 
-	if which clipit &>/dev/null; then
+	if which clipit &>/dev/null || which pbcopy &>/dev/null; then
 		echo "This message should be in your clipboard now"
 		echo
-		echo "GPG_OUT" | clipit
+		echo "GPG_OUT" | clipit &>/dev/null
+		echo "GPG_OUT" | pbcopy &>/dev/null
 	fi
+
 
 	echo "$GPG_OUT"
 	if [[ $rc -ne 0 ]]; then
