@@ -40,30 +40,53 @@ if [[ $1 == '--update' ]]; then
 	exit $rc
 fi
 
+detect_os() {
+	grep -qi 'arch' /etc/os-release 2>/dev/null && echo arch && return 0
+	grep -qiE '(ubuntu|debian)' /etc/os-release 2>/dev/null && echo ubuntu && return 0
+	uname -a | grep -qi darwin 2>/dev/null && echo mac && return 0
+	return 1
+}
+
+install_package() {
+	local CHECK=$1
+	local ARCH=$2
+	local DEBIAN=$3
+	local MAC=$4
+	local OS=$(detect_os)
+
+	if ! which $CHECK &>/dev/null; then
+		if [[ $OS == 'arch' ]]; then
+			[[ $ARCH ]] && pacman -Sy --noconfirm $ARCH
+		fi
+
+		if [[ $OS == 'debian' ]]; then
+			[[ $DEBIAN ]] && apt-get install -y $DEBIAN
+		fi
+
+		if [[ $OS == 'mac' ]]; then
+			[[ $MAC ]] && brew install $MAC
+		fi
+	fi
+
+	which $CHECK &>/dev/null && return 0
+	return 1
+}
+
 # Detect and install packages if necessary
 init() {
 	local GPG_OUT
 	mkdir -p $(dirname "$SETTINGS")
-	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null; then
-		if uname -a | grep -qi darwin; then
-			if ! which brew &> /dev/null; then
-				ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-				brew doctor
-			fi
-			# TODO: check if OS X tput is as retarded as OS X echo; ncurses is in dupes; tput exists according to apple developer documentation
-			brew install gnupg2
-		elif grep -Ei "(ubuntu|debian)" /etc/os-release; then
-			sudo apt-get install -y gnupg2 ncurses-bin
-		elif grep -i 'arch' /etc/os-release; then
-			sudo pacman -S --noconfirm --needed gnupg2 ncurses
-		else
-			error "Unable to find gpg2 or detect your OS version. Please install gpg2 manually"
+
+	if uname -a | grep -qi darwin; then
+		if ! which brew &> /dev/null; then
+			ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+			brew doctor
 		fi
 	fi
 
-	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null; then
-		error "A problem has occurred while trying to detect gpg2 and dependencies; please ensure it is available in your current environment"
-	fi
+	install_package gpg2 gnupg2 gnupg2 gnupg2
+	install_package tput ncurses ncurses-bin ''
+	install_package clipit clipit clipit ''
 
 	# Trust master key
 	if ! gpg2 --list-keys 2>&1 | grep -q $MASTER_KEY; then
@@ -214,14 +237,21 @@ encrypt_message() {
 
 	echo "Sending to: $(gpg --list-keys | grep -A1 $KEYID | grep '@' | sed -E 's/.*<(.*)>.*/\1/') - $KEYID"
 
+	handler() {
+		rm $GPG_ERR
+	}
+
+	GPG_ERR=$(mktemp)
+	trap handler EXIT SIGINT SIGQUIT SIGTERM
+	# TODO: Use clipit to save to clipboard
 	if [[ $FILE == - ]]; then
 		# File is stdin
-		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 3>&1 1>&2 2>&3)
+		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 2>$GPG_ERR)
 		rc=$?
 	elif [[ -n $FILE ]]; then
 		# File is a file
 		[[ ! -f $FILE ]] && error "Please specify a valid file" && exit 1
-		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 3>&1 1>&2 2>&3 < "$FILE")
+		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 2>$GPG_ERR < "$FILE")
 		rc=$?
 	else
 		# No file specified
@@ -231,15 +261,18 @@ encrypt_message() {
 		echo ----------------------------------------------------------------
 		echo
 		echo "$(b)Encrypted message$(c):"
-		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 3>&1 1>&2 2>&3 <<<"$INPUT")
+		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 2>$GPG_ERR <<<"$INPUT")
 		rc=$?
 	fi
 
-	3>&-
+	if which clipit &>/dev/null; then
+		echo "GPG_OUT" | clipit
+	fi
+	echo "$GPG_OUT"
 	if [[ $rc -ne 0 ]]; then
 		error "Failed to encrypt message!"
-		echo "$GPG_OUT"
-	fi
+		echo "$GPG_ERR"
+fi
 	return $rc
 
 }
