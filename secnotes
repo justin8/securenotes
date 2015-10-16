@@ -189,6 +189,7 @@ get_public_key() {
 		error 'Failed to retrieve key'
 	fi
 	echo $GPG_OUT
+	echo
 	return $rc
 }
 
