@@ -44,25 +44,24 @@ fi
 init() {
 	local GPG_OUT
 	mkdir -p $(dirname "$SETTINGS")
-	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null || ! which haveged &>/dev/null; then
+	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null; then
 		if uname -a | grep -qi darwin; then
 			if ! which brew &> /dev/null; then
 				ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 				brew doctor
 			fi
-			# TODO: see if haveged exists on OS X
 			# TODO: check if OS X tput is as retarded as OS X echo; ncurses is in dupes; tput exists according to apple developer documentation
 			brew install gnupg2
 		elif grep -Ei "(ubuntu|debian)" /etc/os-release; then
-			sudo apt-get install -y gnupg2 ncurses-bin haveged
+			sudo apt-get install -y gnupg2 ncurses-bin
 		elif grep -i 'arch' /etc/os-release; then
-			sudo pacman -S --noconfirm --needed gnupg2 ncurses haveged
+			sudo pacman -S --noconfirm --needed gnupg2 ncurses
 		else
 			error "Unable to find gpg2 or detect your OS version. Please install gpg2 manually"
 		fi
 	fi
 
-	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null || ! which haveged &>/dev/null; then
+	if ! which gpg2 &>/dev/null || ! which tput &>/dev/null; then
 		error "A problem has occurred while trying to detect gpg2 and dependencies; please ensure it is available in your current environment"
 	fi
 
@@ -110,8 +109,6 @@ check_for_secret_key() {
 # Use GPG to generate a key and store the key variables for later use
 generate_key() {
 	[[ ! -d $KEYSTORE_LOCATION ]] && error 'Please specify a keystore repository before generating your key' && exit 1
-	# TODO: May not work in docker containers. Need to test; or ignore because this should be on local host only
-	ps aux | grep haveged|grep -qv grep || sudo haveged
 	if check_for_secret_key; then
 		echo "A key has already been generated. Are you sure you want to continue? [y/N]"
 		read -r response
