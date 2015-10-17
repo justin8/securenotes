@@ -6,7 +6,7 @@ KEYSTORE_LOCATION="${SETTINGS%/*}/keystore"
 # KEY_ID - the key ID to use for this user
 # EMAIL - email of the generated key. Used for all encryption/decryption
 # KEYSTORE - git repository of email/fingerprint pairs to trust
-KEY_ID=''
+SECRET_KEY_ID=''
 EMAIL=''
 if [[ -f $SETTINGS ]]; then
 	while read -r line; do declare $line; done < $SETTINGS
@@ -22,7 +22,7 @@ warning() { echo "$(y)Warning$(c): $*" >&2; }
 success() { echo "$(g)Success$(c): $*" >&2; }
 
 # Handle updates at the start; less things to break beforehand if we need to push updates
-if [[ $1 == '--update' ]]; then
+if [[ $1 == 'update' ]]; then
 	shift
 	DIR="$(dirname "$(readlink -f "$0")")"
 	UPDATE=$(git -C $DIR pull 2>&1)
@@ -31,28 +31,43 @@ if [[ $1 == '--update' ]]; then
 		if [[ $UPDATE != 'Already up-to-date.' ]]; then
 			success 'Updated to latest version!'
 		else
-			success "$UPDATE"
+			success "$UPDATE" >&2
 		fi
 	else
 		error "Failed to update!"
-		echo "$UPDATE"
+		echo "$UPDATE" >&2
 	fi
 	exit $rc
 fi
 
+# Outputs the OS name. No inputs
 detect_os() {
+	uname -a | grep -qi darwin 2>/dev/null && echo mac && return 0
 	grep -qi 'arch' /etc/os-release 2>/dev/null && echo arch && return 0
 	grep -qiE '(ubuntu|debian)' /etc/os-release 2>/dev/null && echo ubuntu && return 0
-	uname -a | grep -qi darwin 2>/dev/null && echo mac && return 0
 	return 1
 }
 
+# Install packages if required. Uses which to detect binary, then installs the
+# correct package depending on the OS. A blank package name means it won't be
+# installed for that OS
+# $1 - Binary to check for with which
+# $2 - Arch Linux package name
+# $3 - Debian/Ubuntu package name
+# $4 - OS X Brew package name
 install_package() {
 	local CHECK=$1
 	local ARCH=$2
 	local DEBIAN=$3
 	local MAC=$4
 	local OS=$(detect_os)
+
+	[[ -z $OS ]] && error 'Unable to detect OS!' && return 1
+
+	# Skip if package isn't defined for this OS
+	[[ $OS == 'arch' ]] && [[ -n $ARCH ]] && return 0
+	[[ $OS == 'debian' ]] && [[ -n $DEBIAN ]] && return 0
+	[[ $OS == 'mac' ]] && [[ -n $MAC ]] && return 0
 
 	if ! which $CHECK &>/dev/null; then
 		if [[ $OS == 'arch' ]]; then
@@ -77,6 +92,7 @@ init() {
 	local GPG_OUT
 	mkdir -p $(dirname "$SETTINGS")
 
+	# Install brew on OS X
 	if uname -a | grep -qi darwin; then
 		if ! which brew &> /dev/null; then
 			ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
@@ -84,9 +100,11 @@ init() {
 		fi
 	fi
 
+	set -e
 	install_package gpg2 gnupg2 gnupg2 gnupg2
 	install_package tput ncurses ncurses-bin ''
 	install_package clipit clipit clipit ''
+	set +e
 
 	# Trust master key
 	if ! gpg2 --list-keys 2>&1 | grep -q $MASTER_KEY; then
@@ -103,28 +121,80 @@ init() {
 		[[ $? -ne 0 ]] && error "Failed to trust master key!" && echo "$GPG_OUT" && exit 1
 	fi
 
-	if [[ -d $KEYSTORE_LOCATION ]]; then
-		git -C "$KEYSTORE_LOCATION" fetch --all &>/dev/null
-		git -C "$KEYSTORE_LOCATION" reset --hard &>/dev/null
-		git -C "$KEYSTORE_LOCATION" checkout master &>/dev/null
-		git -C "$KEYSTORE_LOCATION" reset --hard origin/master &>/dev/null
-	fi
+	#if [[ -d $KEYSTORE_LOCATION ]]; then
+	#	git -C "$KEYSTORE_LOCATION" fetch --all &>/dev/null
+	#	git -C "$KEYSTORE_LOCATION" reset --hard &>/dev/null
+	#	git -C "$KEYSTORE_LOCATION" checkout master &>/dev/null
+	#	git -C "$KEYSTORE_LOCATION" reset --hard origin/master &>/dev/null
+	#fi
 }
 
+# $1 - Key ID
+# stdin - output from --list-keys or --list-secret-keys
 grep_email() {
-	grep uid | sed -E 's/.*<(.*)>.*$/\1/'
+	grep -A2 $1 | grep uid | sed -E 's/.*<(.*)>.*$/\1/'
 }
 
+# stdin - output from gen-key
 grep_keyid() {
 	grep pub | sed -E 's|.*/([a-zA-Z0-9]+).*$|\1|'
 }
 
+# Works on Linux and OS X
+# Outputs contents of clipboard
+# Returns 0 when there is data
+# Returns 1 when nothing was in the clipboard or an error
+get_clipboard() {
+	if [[ $(detect_os) == 'mac' ]]; then
+		out=$(pbpaste 2>/dev/null)
+	else
+		out=$(clipit -c 2>/dev/null)
+	fi
+	[[ -z $out ]] && return 1
+	echo "$out"; return 0
+}
+
+# Works on Linux and OS X
+# $1 - Contents to put in clipboard
+# Returns code from clipboard manager
+# TODO: Test retcodes for pbcopy
+set_clipboard() {
+	local clipboard
+
+	if [[ $(detect_os) == 'mac' ]]; then
+		clipboard=pbcopy
+	else
+		clipboard=clipit
+	fi
+	echo "$1" | $clipboard &>/dev/null
+	return $?
+}
+
+# Accepts an unknown input; it could be an email or a key id or neither.
+# This function returns a Key ID of the email, or the input if it is a valid
+# Key ID already, or blank if it is neither.
+# $1 - Anything! works best with emails/key IDs
+find_key_id() {
+	local INPUT=$1
+	local OUTPUT_KEYID
+
+	# Check if input is an email
+	OUTPUT_KEYID=$(get_keyid_from_email "$1" 2>/dev/null)
+	[[ $OUTPUT_KEYID ]] && echo "$OUTPUT_KEYID" && return 0
+
+	# Check if input is a Key ID
+	OUTPUT_KEYID=$(get_public_key "$1" 2>/dev/null)
+	[[ $? -eq 0 ]] && echo "$1" && return 0
+
+	return 1
+}
+
+# Uses KEY_ID and EMAIL from config file
 check_for_secret_key() {
 	[[ -z $EMAIL ]] && return 1
 	[[ -z $KEY_ID ]] && return 1
 
-	SECRET_KEYS=$(gpg2 --list-secret-keys 2>&1)
-	GPG_EMAIL=$(grep -A1 "$KEY_ID" <<<"$SECRET_KEYS" | grep_email)
+	GPG_EMAIL=$(gpg2 --list-secret-keys 2>&1 | grep_email $KEY_ID)
 	[[ $GPG_EMAIL == "$EMAIL" ]] && return 0
 	return 1
 }
@@ -145,7 +215,7 @@ generate_key() {
 	# use `read -s variable` for it
 	NEW_KEY=$(gpg2 --gen-key)
 	KEY_ID=$(grep_keyid <<<"$NEW_KEY")
-	EMAIL=$(grep_email <<<"$NEW_KEY")
+	EMAIL=$(grep_email $KEY_ID <<<"$NEW_KEY")
 	EMAIL=$(tr '[:upper:]' '[:lower:]' <<<"$EMAIL")
 	[[ -z $KEY_ID ]] && error 'Failed to generate key!' && return 1
 	[[ -z $EMAIL ]] && error 'Failed to generate key!' && return 1
@@ -177,6 +247,9 @@ generate_key() {
 	return 0
 }
 
+# Returns a Key ID for a given email address. Only looks in the keystore repository
+# Returns 0 and the Key ID when successful, 1 and a blank string on failure
+# $1 - Email address to find the Key ID for.
 get_keyid_from_email() {
 	local TARGET=$(tr '[:upper:]' '[:lower:]' <<<"$1")
 	local fullname="$KEYSTORE_LOCATION/$TARGET"
@@ -188,11 +261,15 @@ get_keyid_from_email() {
 	done
 
 	# TODO: Implement remote keystore lookup here after falling through local checks
-	error 'Failed to find key locally. Remote lookups coming soon'
+	# Don't error yet; just let calling function know it couldn't find an ID and return ''
+	#error 'Failed to find key locally. Remote lookups coming soon'
 	return 1
 }
 
-# Attempt to recieve the specified KEYID; fallback to local cache if it fails
+# Retrieve a specified Key ID from the key servers. Returns 0 if the key is
+# available regardless of whether it pulled a new version of the key or uses cache
+# Returns 0 if the key was found successfully; 1 if it was not.
+# $1 - Key ID to retrieve
 get_public_key() {
 	local GPG_OUT
 	local rc=0
@@ -211,31 +288,28 @@ get_public_key() {
 	else
 		error 'Failed to retrieve key'
 	fi
-	echo $GPG_OUT
-	echo
+	echo $GPG_OUT >&2
 	return $rc
 }
 
+# Encrypts a message
+# $1 - Key ID to encrypt message for
+# $1 - Message to be encrypted
+# Outputs to clipboard and terminal
+# TODO: Only put on clipboard if under some size?
 encrypt_message() {
-	local GPG_OUT
-	local INPUT
-	local KEYID
+	GPG_OUT=''
+	GPG_ERR=''
+	local RECIPIENT_KEYID=$1
+	local MESSAGE=$2
 	local rc=0
 
-	if ! check_for_secret_key; then
-		error "You must generate a key before being able to encrypt"
-		exit 1
-	fi
+	[[ -z $RECIPIENT_KEYID ]] && error "No recipient specified! This shouldn't happen." && exit 1
+	[[ -z $MESSAGE ]] && error "No message specified! This shouldn't happen." && exit 1
 
-	[[ -z $RECIPIENT ]] && error "No recipient specified! This shouldn't happen." && exit 1
-
-	# Set $KEYID assuming $RECIPIENT is an email. Fallback to using it as the ID itself
-	KEYID=$(get_keyid_from_email $RECIPIENT)
-	[[ -z $KEYID ]] && KEYID=$RECIPIENT
-	get_public_key "$KEYID"
+	get_public_key "$RECIPIENT_KEYID"
 	[[ $? -ne 0 ]] && exit 1
 
-	echo "Sending to: $(gpg --list-keys | grep -A1 $KEYID | grep '@' | sed -E 's/.*<(.*)>.*/\1/') - $KEYID"
 
 	handler() {
 		rm $GPG_ERR
@@ -243,88 +317,69 @@ encrypt_message() {
 
 	GPG_ERR=$(mktemp)
 	trap handler EXIT SIGINT SIGQUIT SIGTERM
-	if [[ $FILE == - ]]; then
-		# File is stdin
-		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 2>$GPG_ERR)
-		rc=$?
-	elif [[ -n $FILE ]]; then
-		# File is a file
-		[[ ! -f $FILE ]] && error "Please specify a valid file" && exit 1
-		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 2>$GPG_ERR < "$FILE")
-		rc=$?
-	else
-		# No file specified
-		echo "Please paste the message to be encrypted below. press ctrl+d to end the message:"
-		INPUT=$(cat)
-		echo
-		echo ----------------------------------------------------------------
-		echo
-		echo "$(b)Encrypted message$(c):"
-		GPG_OUT=$(gpg2 -r $KEYID --armor --encrypt 2>$GPG_ERR <<<"$INPUT")
-		rc=$?
-	fi
+	GPG_OUT=$(gpg2 -u $KEY_ID -r $RECIPIENT_KEYID --armor --encrypt 2>$GPG_ERR <<<"$MESSAGE")
 
-	if which clipit &>/dev/null || which pbcopy &>/dev/null; then
-		echo "This message should be in your clipboard now"
-		echo
-		echo "GPG_OUT" | clipit &>/dev/null
-		echo "GPG_OUT" | pbcopy &>/dev/null
-	fi
-
-
-	echo "$GPG_OUT"
 	if [[ $rc -ne 0 ]]; then
 		error "Failed to encrypt message!"
-		echo "$GPG_ERR"
-fi
-	return $rc
+		echo "$GPG_OUT" >&2
+		cat "$GPG_ERR" >&2
+	else
+		echo "This message can only be read by: $(gpg --list-keys | grep -A1 $RECIPIENT_KEYID | grep '@' | sed -E 's/.*<(.*)>.*/\1/') - $RECIPIENT_KEYID" >&2
+		set_clipboard "$GPG_OUT"
+		[[ $? -eq 0 ]] && echo "The encrypted message should now be on your clipboard" >&2
+		echo >&2
+		echo "$GPG_OUT"
+	fi
 
+	return $rc
 }
 
+# Decrypts a message
+# $1 - Message to be decrypted
+# Outputs to clipboard and terminal
+# Returns 0 on success, 1 on error
+# TODO: Only put on clipboard if under some size?
 decrypt_message() {
-	local GPG_OUT
-	local INPUT
+	GPG_ERR=''
+	GPG_OUT=''
+	local MESSAGE="$1"
 	local rc=0
+
 	if ! check_for_secret_key; then
 		error "You must generate a key before being able to decrypt"
 		exit 1
 	fi
 
-	if [[ $FILE == - ]]; then
-		# File is stdin
-		GPG_OUT=$(gpg2 3>&1 1>&2 2>&3)
-		rc=$?
-	elif [[ -n $FILE ]]; then
-		[[ ! -f $FILE ]] && error "Please specify a valid file" && exit 1
-		# File is a file
-		GPG_OUT=$(gpg2 3>&1 1>&2 2>&3 < "$FILE")
-		rc=$?
-	else
-		# No file specified
-		echo "Please paste the message to be decrypted below:"
-		while read -r line; do
-			[[ -z $INPUT ]] && INPUT="$line" || INPUT="$INPUT"$'\n'"$line"
-			[[ $line == '-----END PGP MESSAGE-----' ]] && break
-		done
-		echo
-		echo ----------------------------------------------------------------
-		echo
-		echo "$(b)Decrypted message$(c):"
-		GPG_OUT=$(gpg2 3>&1 1>&2 2>&3 <<<"$INPUT")
-		rc=$?
-	fi
+	[[ -z $MESSAGE ]] && error "No messsage specified! This shouldn't happen." && exit 1
 
-	3>&-
+	GPG_ERR=$(mktemp)
+	handler() {
+		rm -f $GPG_ERR
+	}
+
+	trap handler EXIT SIGINT SIGQUIT SIGTERM
+	GPG_OUT=$(gpg 2>$GPG_ERR <<<"$MESSAGE")
+	rc=$?
+
 	if [[ $rc -ne 0 ]]; then
 		error "Failed to decrypt message!"
+		echo "$GPG_OUT" >&2
+		cat "$GPG_ERR" >&2
+	else
+		set_clipboard "$GPG_OUT"
+		[[ $? -eq 0 ]] && echo "The decrypted message should now be on your clipboard" >&2
+		echo >&2
 		echo "$GPG_OUT"
 	fi
+
 	return $rc
 }
 
-# set a git repo to use for validating fingerprints
+# Set a git repo to use for validating fingerprints
+# $1 - keystore git repo; can be a github short name or a full git URI
 set_keystore() {
 	local GIT_OUT
+	local KEYSTORE=$1
 	[[ -z $KEYSTORE ]] && error "No keystore specified! This shouldn't happen" && exit 1
 	if [[ -d $KEYSTORE_LOCATION ]]; then
 		error "A keystore has already been specified. Are you sure you wish to overwrite it? [y/N]"
@@ -378,19 +433,129 @@ usage() {
 
 init
 
-FILE=''
-TASK=decrypt_message
-while getopts ":hgde:s:f:" OPTION
-do
-	case $OPTION in
-		h) usage; exit 0 ;;
-		g) TASK=generate_key ;;
-		e) TASK=encrypt_message; RECIPIENT="$OPTARG" ;;
-		f) FILE=$OPTARG ;;
-		s) TASK=set_keystore; KEYSTORE="$OPTARG" ;;
-		?) usage; error "Unknown option"; exit 1;;
-	esac
-done
-shift $(( OPTIND -1 ))
+case $1 in
+	-h|--help|help) usage; exit 0 ;;
+	set-keystore) set_keystore $2; exit $? ;;
+	generate-key) generate_key; exit $? ;;
+esac
 
-$TASK
+invalid_parameters() {
+	error "Invalid parameters"
+	usage
+	exit 1
+}
+
+# Usage logic begins here
+
+if [[ $2 ]]; then
+# $2 is specified, this must be an encryption workflow with a file
+# decryption needs max 1 parameter, adn encryption only needs 2 if it is a file
+	if [[ -f $2 ]]; then
+		# $2 is a file; $1 must be a keyid/email/similar; check if it is
+		RECIPIENT_KEYID="$(find_key_id "$1")"
+		if [[ $? -eq 0 ]]; then
+			# $1 is a valid email, name or key, and $2 is a file
+			encrypt_message "$RECIPIENT_KEYID" "$(cat "$2")"
+			exit $?
+		fi
+		# $2 is a file; $1 is not an email, name or valid key ID
+		invalid_parameters
+	else
+		# 2 parameters, but $2 is not a file
+		if [[ -f $1 ]]; then
+			# $1 is a file; $2 must be a keyid/email/name; check if it is
+			RECIPIENT_KEYID="$(find_key_id "$2")"
+			if [[ -n $RECIPIENT_KEYID ]]; then
+				encrypt_message "$RECIPIENT_KEYID" "$(cat "$1")"
+				exit $?
+			fi
+			# $1 is a file; $2 is not an email, name or valid key ID
+			invalid_parameters
+		else
+			# 2 parameters, neither are files
+			invalid_parameters
+		fi
+	fi
+fi
+
+# At this point, $2 cannot be specified; Let's determine what flow this is
+if [[ $1 ]]; then
+	# $1 is a file, no other information; it must be encrypted
+	# This will also exit 1 if it was not decryptable but is a file
+	if [[ -f $1 ]]; then
+		decrypt_message "$(cat $1)"
+		exit $?
+	fi
+
+	# Get the key id from $1 out here
+	RECIPIENT_KEYID="$(find_key_id "$1")"
+
+	# Check for stdin; this might be a key we are encrypting to
+	if ! [[ -t 0 ]]; then
+		# stdin has text, and $1 might be a key;
+		# TODO: Should we check at this point if stdin is encrypted or not. Need to peek at pipe for this
+		# TODO: If it is encrypted, do a decrypt here, fall back to encryption
+		# TODO: For now assume it needs encrypting
+		if [[ -n $RECIPIENT_KEYID ]]; then
+			# encrypt stdin with the ID specified by $1
+			encrypt_message "$RECIPIENT_KEYID" "$(cat)"
+			exit $?
+		fi
+	fi
+
+	if [[ -n $RECIPIENT_KEYID ]]; then
+		# $1 is a valid ID and no other input given. We'll encrypt the clipboard contents if it exists
+		clipboard=$(get_clipboard)
+		if [[ $clipboard ]]; then
+			encrypt_message "$RECIPIENT_KEYID" "$clipboard"
+			exit $?
+		fi
+
+		# $1 is a valid ID, and there is no other input or even valid clipboard data; wait for pasted data
+		echo "Please paste the message to be encrypted below. press ctrl+D to end the message:" >&2
+		INPUT="$(cat)"
+		echo >&2
+		echo ---------------------------------------------------------------- >&2
+		echo >&2
+		echo "$(b)Encrypted message$(c):" >&2
+		encrypt_message "$RECIPIENT_KEYID" "$INPUT"
+		exit $?
+	fi
+
+	# $1 is not a key ID or a file; there may be data on stdin, but it must be an error
+	# TODO: Update this note once we decrypt regardless of extra data on $1
+	invalid_parameters
+fi
+
+# No parameters; lets figure out what is on the clipboard, and what is on stdin
+if ! [[ -t 0 ]]; then
+	# data on stdin; no keys specified; must be decryption workflow
+	decrypt_message "$(cat)"
+	exit $?
+fi
+
+# Fall back to checking clipboard for data to decrypt as no parameters were specified
+clipboard=$(get_clipboard)
+if grep -q -- '----- BEGIN PGP MESSAGE' <<<"$clipboard"; then
+	# Found valid data to decrypt on the clipboard
+	decrypt_message $clipboard
+	exit $?
+fi
+
+# Enter data to decrypt!!
+INPUT=''
+echo "Please paste the message to be decrypted below:"
+while read -r line; do
+	[[ -z $INPUT ]] && INPUT="$line" || INPUT="$INPUT"$'\n'"$line"
+	[[ $line == '-----END PGP MESSAGE-----' ]] && break
+done
+OUT=$(decrypt_message "$INPUT")
+rc=$?
+if [[ -n $OUT ]]; then
+	echo >&2
+	echo ---------------------------------------------------------------- >&2
+	echo >&2
+	echo "$(b)Decrypted message$(c):" >&2
+	echo "$OUT"
+fi
+exit $rc
