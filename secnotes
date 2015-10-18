@@ -412,22 +412,48 @@ set_keystore() {
 }
 
 usage() {
+	local NAME="$(basename "$0")"
 	cat <<-EOF
-	Usage: $(basename "$(readlink "$0")") [options]
+	Usage: $NAME (ID|file|generate-key|set-keystore|help)
 
-	With nothing specified the tool will default to decrypting a message.
+	This tool will try to figure out what you are intending to do by what data you put in
+	No flags are necessary. Data can be provided by the clipboard, typing in manually,
+	via pipes with stdin or a file. In order to encrypt data the identity of a person is
+	required, as well as a message to encrypt. Please see the examples below.
 
-	The message to be decrypted/encrypted will be requested on the terminal.
-	If you wish to decrypt/encrypt from stdin, use '-f -'. To use a file
-	specify '-f \$FILENAME'.
+	$(y)NOTE$(c): All data is output to the console on stdout as well as to your clipboard if it is accessible.
+	$(y)NODE$(c): An ID can be any of the following:
+	  - A full email address
+	  - The start of a person's email address (e.g. 'justin' will match 'justin@c9.io')
+	  - A GPG key ID (This can be used to send to people not registered in the keystore)
 
 	Options:
-	 -h         Show this $(b)H$(c)elp
-	 -e email   $(b)E$(c)ncrypt a message (typed/pasted in. file/stdin with '-f')
-	            You must specify the email of the person you intend to send this to
-	 -f file    Specify a $(b)F$(c)ile. Specifying '-' will use stdin
-	 -g         $(b)G$(c)enerate a key pair; This should only be needed once
-	 -s repo    $(b)S$(c)et a git repo as the keystore for verifying key IDs
+	 help                Show this Help
+	 generate-key        Generate a key pair; This should only be needed once
+	 set-keystore        Set a git repo as the keystore for verifying key IDs
+
+	Examples:
+	Decrypting data:
+	  From the clipboard:
+	  $NAME
+
+	  From a file:
+	  $NAME ENCRYPTED_FILE
+
+	  From stdin:
+	  echo '[ENCRYPTED DATA]' | $NAME
+
+	Encrypting data:
+	  From the clipboard:
+	  $NAME ID
+
+	  From a file:
+	  $NAME ID UNENCRYPTYED_FILE
+	  OR
+	  $NAME UNENCRYPTED_FILE ID
+
+	  From stdin:
+	  echo '[ DATA TO BE ENCRYPTED ]' | $NAME
 	EOF
 }
 
