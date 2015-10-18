@@ -504,10 +504,6 @@ usage() {
 	required, as well as a message to encrypt. Please see the examples below.
 
 	$(y)NOTE$(c): All data is output to the console on stdout as well as to your clipboard if it is accessible.
-	$(y)NODE$(c): An ID can be any of the following:
-	  - A full email address
-	  - The start of a person's email address (e.g. 'justin' will match 'justin@c9.io')
-	  - A GPG key ID (This can be used to send to people not registered in the keystore)
 
 	Options:
 	 help                Show this Help
@@ -515,6 +511,12 @@ usage() {
 	 set-keystore        Set a git repo as the keystore for verifying key IDs
 
 	Examples:
+
+	$(y)NOTE$(c): In relation to the examples below, an ID can be any of the following:
+	  - A full email address
+	  - The start of a person's email address (e.g. 'justin' will match 'justin@c9.io')
+	  - A GPG key ID (This can be used to send to people not registered in the keystore)
+
 	Decrypting data:
 	  From the clipboard:
 	  $NAME
