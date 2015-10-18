@@ -11,7 +11,8 @@ handler() {
 	error 'Failed to install!'
 }
 
-[[ -z $1 ]] && error 'Please provide a repository name for the keystore!' && exit 1
+keystore=cloud9ide/keystore
+[[ -n $1 ]] && keystore=$1
 
 trap handler EXIT SIGINT SIGQUIT SIGTERM
 
@@ -24,7 +25,7 @@ fi
 
 [[ -f ~/.zshrc ]] && ! grep -q "$DIR" ~/.zshrc && echo "PATH=$DIR:"'$PATH' >> ~/.zshrc
 
-$DIR/secnotes -s $1
+$DIR/secnotes -s $keystore
 $DIR/secnotes -g
 
 echo "$(tput setaf 2; tput bold)Success$(tput sgr0): Run 'secnotes' from anywhere to use the tool!"
