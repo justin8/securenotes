@@ -46,17 +46,15 @@ new key under the name of the email entered during install. Please follow the be
 1. Check the key for the user and make sure it is legitimate, the user is who they
 say they are, and that they were the ones to push the new or updated key
 2. Merge the branch in to master
-3. Copy the user's key ID (the contents of their merge)
-4. Run this on a machine with the master signing key:
+3. Copy the user's key ID or email address to use as '$ID' in the following step
+4. Run this on a machine with the secret master key: `secnotes sign-key $ID`
 
 ##TODO
 TODO: Script for signing new keys, pushing them and accepting the merge request? Can we make certain users able to push to master on github?
 TODO: For the admin side; is it possible to create a pull request via CLI to github?
 TODO: Put this script as a webhook on keystore github?
 
-TODO: Write a readme
 TODO: only copy to clipboard if message is below some size! Large binary blobs could be encrypted with this
-TODO: Move out functions in admin tool to a shared library
 
 TODO: keybase integration?
 

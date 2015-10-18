@@ -493,6 +493,27 @@ set_keystore() {
 	return 0
 }
 
+sign_key(){
+	local KEY
+	local MASTER_KEY
+
+	handler() {
+		error 'Failed to sign and upload key'
+		trap - SIGTERM SIGINT SIGQUIT EXIT
+		exit
+	}
+
+	set -e
+	trap handler SIGTERM SIGINT SIGQUIT EXIT
+	MASTER_KEY=$(get_master_key)
+	KEY=$(find_key_id "$1")
+
+	gpg -u "$MASTER_KEY" --sign-key "$KEY"
+	gpg --send-key "$KEY"
+	trap - SIGTERM SIGINT SIGQUIT EXIT
+	success 'Signed and uploaded key'
+}
+
 usage() {
 	local NAME="$(basename "$0")"
 	cat <<-EOF
@@ -509,6 +530,7 @@ usage() {
 	 help                Show this Help
 	 generate-key        Generate a key pair; This should only be needed once
 	 set-keystore        Set a git repo as the keystore for verifying key IDs
+	 sign-key            Used to sign and trust a key for all users.
 
 	Examples:
 
@@ -547,6 +569,7 @@ case $1 in
 	-h|--help|help) usage; exit 0 ;;
 	set-keystore) set_keystore "$2"; exit $? ;;
 	generate-key) generate_key; exit $? ;;
+	sign-key) sign_key "$2"; exit $? ;;
 esac
 
 invalid_parameters() {
