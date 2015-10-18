@@ -3,9 +3,6 @@ TODO: Script for signing new keys, pushing them and accepting the merge request?
 TODO: For the admin side; is it possible to create a pull request via CLI to github?
 TODO: Put this script as a webhook on keystore github?
 
-TODO: Set install to a default keystore? but allow it to be overwritten.
-TODO: if master key is hard coded in the script; how can this be portable. Maybe have it settable in a config file with a fallback?
-
 TODO: Update readme
 TODO: Check clipboard functions; do we decrypt in place? same for encryption
 TODO: only copy to clipboard if message is below some size! Large binary blobs could be encrypted with this
