@@ -12,6 +12,8 @@ TODO: only copy to clipboard if message is below some size! Large binary blobs c
 TODO: Fix key generation to be betterer
 TODO: gpg/gpg2 usage; why did gpg2 break suddenly for ubuntu. Can I just use gpg?
 
+TODO: keybase integration?
+
 = Notes for development =
 - All functions must be pipeable; anything informational should be on stderr, only actual data should be on stdout
 
