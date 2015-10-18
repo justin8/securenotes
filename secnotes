@@ -317,6 +317,8 @@ encrypt_message() {
 	[[ -z $RECIPIENT_KEYID ]] && error "No recipient specified! This shouldn't happen." && exit 1
 	[[ -z $MESSAGE ]] && error "No message specified! This shouldn't happen." && exit 1
 
+	update_keystore
+
 	get_public_key "$RECIPIENT_KEYID"
 	[[ $? -ne 0 ]] && exit 1
 
