@@ -327,7 +327,7 @@ encrypt_message() {
 		rm $GPG_ERR
 	}
 
-	GPG_ERR=$(mktemp)
+	GPG_ERR="$(mktemp -t "$(basename $0).XXXXXXXX")"
 	trap handler EXIT SIGINT SIGQUIT SIGTERM
 	GPG_OUT="$(gpg2 -u "$SECRET_KEY_ID" -r "$RECIPIENT_KEYID" --armor --encrypt 2>"$GPG_ERR" <<<"$MESSAGE")"
 
@@ -363,7 +363,7 @@ decrypt_message() {
 
 	[[ -z $MESSAGE ]] && error "No messsage specified! This shouldn't happen." && exit 1
 
-	GPG_ERR=$(mktemp)
+	GPG_ERR="$(mktemp -t "$(basename $0).XXXXXXXX")"
 	handler() {
 		rm -f "$GPG_ERR"
 	}
