@@ -573,7 +573,7 @@ fi
 
 # Fall back to checking clipboard for data to decrypt as no parameters were specified
 clipboard=$(get_clipboard)
-if grep -q -- '----- BEGIN PGP MESSAGE' <<<"$clipboard"; then
+if grep -q -- '-----BEGIN PGP MESSAGE' <<<"$clipboard"; then
 	success 'Found encrypted data on clipboard. Decrypting'
 	# Found valid data to decrypt on the clipboard
 	decrypt_message "$clipboard"
