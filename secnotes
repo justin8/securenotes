@@ -304,7 +304,7 @@ generate_key() {
 	git -C "$KEYSTORE_LOCATION" config user.email "$EMAIL"
 	git -C "$KEYSTORE_LOCATION" config user.name "$(gpg --list-secret-keys|grep -A1 "$SECRET_KEY_ID"|grep uid|sed -r 's/.*uid\s*(\[.*\] )?([a-zA-Z ]*) <.*/\2/')"
 	git -C "$KEYSTORE_LOCATION" commit -m "New key for $EMAIL"
-	git -C "$KEYSTORE_LOCATION" push --set-upstream origin HEAD
+	git -C "$KEYSTORE_LOCATION" push -f --set-upstream origin HEAD
 	git -C "$KEYSTORE_LOCATION" checkout master
 	trap - SIGQUIT SIGINT SIGTERM EXIT
 	set +e
