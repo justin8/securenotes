@@ -175,7 +175,9 @@ set_clipboard() {
 		clipboard=clipit
 	fi
 	echo "$1" | $clipboard &>/dev/null
-	return $?
+	rc=$?
+	[[ $rc -eq 0 ]] && success 'The message has been successfully copied to your clipboard'
+	return $rc
 }
 
 # Accepts an unknown input; it could be an email or a key id or neither.
@@ -334,7 +336,6 @@ encrypt_message() {
 	else
 		echo "This message can only be read by: $(gpg --list-keys | grep -A1 $RECIPIENT_KEYID | grep '@' | sed -E 's/.*<(.*)>.*/\1/') - $RECIPIENT_KEYID" >&2
 		set_clipboard "$GPG_OUT"
-		[[ $? -eq 0 ]] && echo "The encrypted message should now be on your clipboard" >&2
 		echo >&2
 		echo "$GPG_OUT"
 	fi
@@ -375,7 +376,6 @@ decrypt_message() {
 		cat "$GPG_ERR" >&2
 	else
 		set_clipboard "$GPG_OUT"
-		[[ $? -eq 0 ]] && echo "The decrypted message should now be on your clipboard" >&2
 		echo >&2
 		echo "$GPG_OUT"
 	fi
@@ -541,6 +541,7 @@ if [[ $1 ]]; then
 		# $1 is a valid ID and no other input given. We'll encrypt the clipboard contents if it exists
 		clipboard=$(get_clipboard)
 		if [[ $clipboard ]]; then
+			success 'Found data on clipboard. Encrypting...'
 			encrypt_message "$RECIPIENT_KEYID" "$clipboard"
 			exit $?
 		fi
@@ -571,6 +572,7 @@ fi
 # Fall back to checking clipboard for data to decrypt as no parameters were specified
 clipboard=$(get_clipboard)
 if grep -q -- '----- BEGIN PGP MESSAGE' <<<"$clipboard"; then
+	success 'Found encrypted data on clipboard. Decrypting'
 	# Found valid data to decrypt on the clipboard
 	decrypt_message "$clipboard"
 	exit $?
