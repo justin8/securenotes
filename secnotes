@@ -336,7 +336,7 @@ encrypt_message() {
 		echo "$GPG_OUT" >&2
 		cat "$GPG_ERR" >&2
 	else
-		echo "This message can only be read by: $(gpg --list-keys | grep -A1 $RECIPIENT_KEYID | grep '@' | sed -E 's/.*<(.*)>.*/\1/') - $RECIPIENT_KEYID" >&2
+		echo "This message can only be read by: $(gpg --list-keys | grep_email "$RECIPIENT_KEYID") - $RECIPIENT_KEYID" >&2
 		set_clipboard "$GPG_OUT"
 		echo >&2
 		echo "$GPG_OUT"
