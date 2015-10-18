@@ -25,7 +25,7 @@ success() { echo "$(g)Success$(c): $*" >&2; }
 if [[ $1 == 'update' ]]; then
 	shift
 	DIR="$(dirname "$0")"
-	UPDATE=$(git -C $DIR pull 2>&1)
+	UPDATE="$(git -C "$DIR" pull 2>&1)"
 	rc=$?
 	if [[ $rc == 0 ]]; then
 		if [[ $UPDATE != 'Already up-to-date.' ]]; then
@@ -60,7 +60,7 @@ install_package() {
 	local ARCH=$2
 	local DEBIAN=$3
 	local MAC=$4
-	local OS=$(detect_os)
+	local OS="$(detect_os)"
 
 	[[ -z $OS ]] && error 'Unable to detect OS!' && return 1
 
@@ -69,7 +69,7 @@ install_package() {
 	[[ $OS == 'debian' ]] && [[ -n $DEBIAN ]] && return 0
 	[[ $OS == 'mac' ]] && [[ -n $MAC ]] && return 0
 
-	if ! which $CHECK &>/dev/null; then
+	if ! which "$CHECK" &>/dev/null; then
 		if [[ $OS == 'arch' ]]; then
 			[[ $ARCH ]] && pacman -Sy --noconfirm $ARCH
 		fi
@@ -83,14 +83,14 @@ install_package() {
 		fi
 	fi
 
-	which $CHECK &>/dev/null && return 0
+	which "$CHECK" &>/dev/null && return 0
 	return 1
 }
 
 # Detect and install packages if necessary
 init() {
 	local GPG_OUT
-	mkdir -p $(dirname "$SETTINGS")
+	mkdir -p "$(dirname "$SETTINGS")"
 
 	# Install brew on OS X
 	if uname -a | grep -qi darwin; then
@@ -120,19 +120,22 @@ init() {
 		GPG_OUT=$(gpg2 --import-ownertrust <<<"$OWNERTRUST" 2>&1)
 		[[ $? -ne 0 ]] && error "Failed to trust master key!" && echo "$GPG_OUT" && exit 1
 	fi
+}
 
-	#if [[ -d $KEYSTORE_LOCATION ]]; then
-	#	git -C "$KEYSTORE_LOCATION" fetch --all &>/dev/null
-	#	git -C "$KEYSTORE_LOCATION" reset --hard &>/dev/null
-	#	git -C "$KEYSTORE_LOCATION" checkout master &>/dev/null
-	#	git -C "$KEYSTORE_LOCATION" reset --hard origin/master &>/dev/null
-	#fi
+update_keystore() {
+	echo 'Updating keystore...' >&2
+	if [[ -d $KEYSTORE_LOCATION ]]; then
+		git -C "$KEYSTORE_LOCATION" fetch --all &>/dev/null
+		git -C "$KEYSTORE_LOCATION" reset --hard &>/dev/null
+		git -C "$KEYSTORE_LOCATION" checkout master &>/dev/null
+		git -C "$KEYSTORE_LOCATION" reset --hard origin/master &>/dev/null
+	fi
 }
 
 # $1 - Key ID
 # stdin - output from --list-keys or --list-secret-keys
 grep_email() {
-	grep -A2 $1 | grep uid | sed -E 's/.*<(.*)>.*$/\1/'
+	grep -A2 "$1" | grep uid | sed -E 's/.*<(.*)>.*$/\1/'
 }
 
 # stdin - output from gen-key
@@ -251,9 +254,9 @@ generate_key() {
 # Returns 0 and the Key ID when successful, 1 and a blank string on failure
 # $1 - Email address to find the Key ID for.
 get_keyid_from_email() {
-	local TARGET=$(tr '[:upper:]' '[:lower:]' <<<"$1")
+	local TARGET="$(tr '[:upper:]' '[:lower:]' <<<"$1")"
 	local fullname="$KEYSTORE_LOCATION/$TARGET"
-	local shortname=$(find "$KEYSTORE_LOCATION" -maxdepth 1 -iname "$TARGET*")
+	local shortname="$(find "$KEYSTORE_LOCATION" -maxdepth 1 -iname "$TARGET*")"
 
 	# keystore lookup
 	for file in $fullname $shortname; do
@@ -278,7 +281,7 @@ get_public_key() {
 	GPG_OUT=$(gpg2 --recv-key "$KEYID" 2>&1)
 	rc=$?
 
-	if gpg --list-keys | grep -q $KEYID; then
+	if gpg --list-keys | grep -q "$KEYID"; then
 		if [[ $rc -eq 0 ]]; then
 			return 0
 		else
@@ -288,7 +291,7 @@ get_public_key() {
 	else
 		error 'Failed to retrieve key'
 	fi
-	echo $GPG_OUT >&2
+	echo "$GPG_OUT" >&2
 	return $rc
 }
 
@@ -317,7 +320,7 @@ encrypt_message() {
 
 	GPG_ERR=$(mktemp)
 	trap handler EXIT SIGINT SIGQUIT SIGTERM
-	GPG_OUT=$(gpg2 -u $KEY_ID -r $RECIPIENT_KEYID --armor --encrypt 2>$GPG_ERR <<<"$MESSAGE")
+	GPG_OUT="$(gpg2 -u "$SECRET_KEY_ID" -r "$RECIPIENT_KEYID" --armor --encrypt 2>"$GPG_ERR" <<<"$MESSAGE")"
 
 	if [[ $rc -ne 0 ]]; then
 		error "Failed to encrypt message!"
@@ -354,11 +357,11 @@ decrypt_message() {
 
 	GPG_ERR=$(mktemp)
 	handler() {
-		rm -f $GPG_ERR
+		rm -f "$GPG_ERR"
 	}
 
 	trap handler EXIT SIGINT SIGQUIT SIGTERM
-	GPG_OUT=$(gpg 2>$GPG_ERR <<<"$MESSAGE")
+	GPG_OUT="$(gpg 2>"$GPG_ERR" <<<"$MESSAGE")"
 	rc=$?
 
 	if [[ $rc -ne 0 ]]; then
@@ -461,7 +464,7 @@ init
 
 case $1 in
 	-h|--help|help) usage; exit 0 ;;
-	set-keystore) set_keystore $2; exit $? ;;
+	set-keystore) set_keystore "$2"; exit $? ;;
 	generate-key) generate_key; exit $? ;;
 esac
 
@@ -509,7 +512,7 @@ if [[ $1 ]]; then
 	# $1 is a file, no other information; it must be encrypted
 	# This will also exit 1 if it was not decryptable but is a file
 	if [[ -f $1 ]]; then
-		decrypt_message "$(cat $1)"
+		decrypt_message "$(cat "$1")"
 		exit $?
 	fi
 
@@ -564,7 +567,7 @@ fi
 clipboard=$(get_clipboard)
 if grep -q -- '----- BEGIN PGP MESSAGE' <<<"$clipboard"; then
 	# Found valid data to decrypt on the clipboard
-	decrypt_message $clipboard
+	decrypt_message "$clipboard"
 	exit $?
 fi
 
