@@ -69,6 +69,10 @@ install_package() {
 	[[ $OS == 'debian' ]] && [[ -n $DEBIAN ]] && return 0
 	[[ $OS == 'mac' ]] && [[ -n $MAC ]] && return 0
 
+	# check set status
+	#reset it afterwards?
+	errexit=$(set -o | grep -q 'errexit.*on' && echo '-e' || echo '+e')
+	set +e
 	if ! which "$CHECK" &>/dev/null; then
 		if [[ $OS == 'arch' ]]; then
 			[[ $ARCH ]] && pacman -Sy --noconfirm $ARCH
@@ -84,6 +88,7 @@ install_package() {
 	fi
 
 	which "$CHECK" &>/dev/null && return 0
+	set $errexit
 	return 1
 }
 
