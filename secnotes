@@ -106,7 +106,7 @@ init() {
 	fi
 
 	set -e
-	install_package gpg2 gnupg2 gnupg2 gnupg2
+	install_package gpg gnupg gnupg gnupg
 	install_package tput ncurses ncurses-bin ''
 	install_package clipit clipit clipit ''
 	set +e
