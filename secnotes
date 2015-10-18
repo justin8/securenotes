@@ -24,7 +24,7 @@ success() { echo "$(g)Success$(c): $*" >&2; }
 # Handle updates at the start; less things to break beforehand if we need to push updates
 if [[ $1 == 'update' ]]; then
 	shift
-	DIR="$(dirname "$(readlink -f "$0")")"
+	DIR="$(dirname "$0")"
 	UPDATE=$(git -C $DIR pull 2>&1)
 	rc=$?
 	if [[ $rc == 0 ]]; then
