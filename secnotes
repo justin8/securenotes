@@ -143,11 +143,6 @@ grep_email() {
 	grep -A2 "$1" | grep uid | sed -E 's/.*<(.*)>.*$/\1/'
 }
 
-# stdin - output from gen-key
-grep_keyid() {
-	grep pub | sed -E 's|.*/([a-zA-Z0-9]+).*$|\1|'
-}
-
 # Works on Linux and OS X
 # Outputs contents of clipboard
 # Returns 0 when there is data
@@ -209,8 +204,48 @@ check_for_secret_key() {
 	return 1
 }
 
+# Asks the user for a password until they can enter one correctly twice in a row
+# Returns the password on stdout
+ask_passphrase() {
+	local passphrase1
+	local passphrase2
+
+	# Outputs the passphrase if it was entered twice correctly
+	# Otherwise returns 1 and a blank string
+	passphrase_loop_function() {
+		echo -n 'Please enter a password for your new key: ' >&2
+		read -s passphrase1
+		echo >&2
+		echo -n 'Please re-enter your password: ' >&2
+		read -s passphrase2
+		echo >&2
+
+		if [[ $passphrase1 == "$passphrase2" ]]; then
+			echo "$passphrase1"
+			return 0
+		else
+			return 1
+		fi
+	}
+
+	passphrase=$(passphrase_loop_function)
+	rc=$?
+
+	while [[ $rc -ne 0 ]]; do
+		error 'Passphrases do not match. Please try again'
+		passphrase=$(passphrase_loop_function)
+		rc=$?
+	done
+
+	echo "$passphrase"
+}
+
 # Use GPG to generate a key and store the key variables for later use
 generate_key() {
+	local NAME
+	local EMAIL
+	local PASSPHRASE
+
 	[[ ! -d $KEYSTORE_LOCATION ]] && error 'Please specify a keystore repository before generating your key' && exit 1
 	if check_for_secret_key; then
 		echo "A key has already been generated. Are you sure you want to continue? [y/N]"
@@ -223,12 +258,36 @@ generate_key() {
 
 	# TODO: Use a key settings file with --gen-key --batch over stdin to support old gpg on Ubuntu/OSX
 	# use `read -s variable` for it
-	NEW_KEY=$(gpg2 --gen-key)
-	SECRET_KEY_ID=$(grep_keyid <<<"$NEW_KEY")
-	EMAIL="$(grep_email "$SECRET_KEY_ID" <<<"$NEW_KEY")"
+	# As for real name
+	# ask for email
+	# ask for password
+	# confirm password; how to retry? while loop?
+	echo -n 'Please enter your full name: ' >&2
+	read NAME
+	echo -n 'Please enter your email address: ' >&2
+	read EMAIL
+
 	EMAIL=$(tr '[:upper:]' '[:lower:]' <<<"$EMAIL")
-	[[ -z $SECRET_KEY_ID ]] && error 'Failed to generate key!' && return 1
-	[[ -z $EMAIL ]] && error 'Failed to generate key!' && return 1
+	PASSPHRASE=$(ask_passphrase)
+
+	# Create text to send to gpg
+	batch_string=$(cat <<-EOF
+		Key-Type: default
+		Key-Length: 4096
+		Subkey-Type: default
+		Expire-Date: 0
+		Name-Real: $NAME
+		Name-Email: $EMAIL
+		Passphrase: $PASSPHRASE
+		%commit
+		EOF
+		)
+
+	echo 'Generating key. Please wait... ' >&2
+	GPG_OUT=$(gpg2 --gen-key --batch 2>&1 <<<"$batch_string")
+	[[ $? -ne 0 ]] && error 'Failed to generate key!' && echo "$NEW_KEY" 2>&1 && exit 1
+	SECRET_KEY_ID="$(grep -Eo 'key [A-Z0-9]+ ' <<<"$GPG_OUT" | cut -d' ' -f2)"
+
 	GPG_OUT=$(gpg2 --send-key "$SECRET_KEY_ID" 2>&1)
 	rc=$?
 	# TODO: Cleanup after failure to upload?
