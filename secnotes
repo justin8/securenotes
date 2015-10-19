@@ -72,14 +72,15 @@ install_package() {
 	# check set status
 	#reset it afterwards?
 	errexit=$(set -o | grep -q 'errexit.*on' && echo '-e' || echo '+e')
+	sudo=$(which sudo 2>/dev/null)
 	set +e
 	if ! which "$CHECK" &>/dev/null; then
 		if [[ $OS == 'arch' ]]; then
-			[[ $ARCH ]] && sudo pacman -Sy --noconfirm $ARCH
+			[[ $ARCH ]] && $sudo pacman -Sy --noconfirm $ARCH
 		fi
 
 		if [[ $OS == 'debian' ]]; then
-			[[ $DEBIAN ]] && sudo apt-get install -y $DEBIAN
+			[[ $DEBIAN ]] && $sudo apt-get install -y $DEBIAN
 		fi
 
 		if [[ $OS == 'mac' ]]; then
