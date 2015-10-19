@@ -483,7 +483,7 @@ set_keystore() {
 	fi
 
 	GIT_OUT=$(git clone "$KEYSTORE" "$KEYSTORE_LOCATION" 2>&1)
-	[[ $? -ne 0 ]] && error
+	[[ $? -ne 0 ]] && error 'Failed to sync keystore' && echo "$GIT_OUT" && exit 1
 
 	success 'Synced keystore.'
 	return 0
