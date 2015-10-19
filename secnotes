@@ -1,6 +1,7 @@
 #!/bin/bash
 SETTINGS=~/.config/secnotes/config
 KEYSTORE_LOCATION="${SETTINGS%/*}/keystore"
+KEYSERVER='--keyserver pgp.mit.edu'
 # Expected variables from settings:
 # SECRET_KEY_ID - the key ID to use for this user
 # EMAIL - email of the generated key. Used for all encryption/decryption
@@ -103,17 +104,16 @@ trust_master_key() {
 	local rc
 
 
-	if ! gpg2 --list-keys 2>&1 | grep -q "$MASTER_KEY"; then
+	if ! gpg --list-keys 2>&1 | grep -q "$MASTER_KEY"; then
 		warning "Master key not found. Downloading..."
-		GPG_OUT=$(gpg2 --recv-key "$MASTER_KEY" 2>&1)
-		rc=$?
-		[[ $rc -ne 0 ]] && error "Failed retrieving master key!" && echo "$GPG_OUT" && exit $rc
+		get_public_key "$MASTER_KEY"
+		[[ $? -ne 0 ]] && exit $rc
 	fi
 
-	if ! gpg2 --list-keys --list-options show-uid-validity 2>&1 | grep -a1 "$MASTER_KEY" | grep -q 'ultimate'; then
+	if ! gpg --list-keys --list-options show-uid-validity 2>&1 | grep -a1 "$MASTER_KEY" | grep -q 'ultimate'; then
 		warning "Master key not ultimately trusted. Fixing..."
-		OWNERTRUST=$(gpg2 --list-keys --with-fingerprint --with-colons 2>&1 | grep -B1 'ops@c9.io' | head -n1 | tr -s : : | cut -d: -f2):6:
-		GPG_OUT=$(gpg2 --import-ownertrust <<<"$OWNERTRUST" 2>&1)
+		OWNERTRUST=$(gpg --list-keys --with-fingerprint --with-colons 2>&1 | grep -B1 'ops@c9.io' | head -n1 | tr -s : : | cut -d: -f2):6:
+		GPG_OUT=$(gpg --import-ownertrust <<<"$OWNERTRUST" 2>&1)
 		[[ $? -ne 0 ]] && error "Failed to trust master key!" && echo "$GPG_OUT" && exit 1
 	fi
 }
@@ -212,7 +212,7 @@ check_for_secret_key() {
 	[[ -z $EMAIL ]] && return 1
 	[[ -z $SECRET_KEY_ID ]] && return 1
 
-	GPG_EMAIL=$(gpg2 --list-secret-keys 2>&1 | grep_email $SECRET_KEY_ID)
+	GPG_EMAIL=$(gpg --list-secret-keys 2>&1 | grep_email $SECRET_KEY_ID)
 	[[ $GPG_EMAIL == "$EMAIL" ]] && return 0
 	return 1
 }
@@ -269,12 +269,6 @@ generate_key() {
 		esac
 	fi
 
-	# TODO: Use a key settings file with --gen-key --batch over stdin to support old gpg on Ubuntu/OSX
-	# use `read -s variable` for it
-	# As for real name
-	# ask for email
-	# ask for password
-	# confirm password; how to retry? while loop?
 	echo -n 'Please enter your full name: ' >&2
 	read NAME
 	echo -n 'Please enter your email address: ' >&2
@@ -297,11 +291,11 @@ generate_key() {
 		)
 
 	echo 'Generating key. Please wait... ' >&2
-	GPG_OUT=$(gpg2 --gen-key --batch 2>&1 <<<"$batch_string")
+	GPG_OUT=$(gpg --gen-key --batch 2>&1 <<<"$batch_string")
 	[[ $? -ne 0 ]] && error 'Failed to generate key!' && echo "$NEW_KEY" 2>&1 && exit 1
 	SECRET_KEY_ID="$(grep -Eo 'key [A-Z0-9]+ ' <<<"$GPG_OUT" | cut -d' ' -f2)"
 
-	GPG_OUT=$(gpg2 --send-key "$SECRET_KEY_ID" 2>&1)
+	GPG_OUT=$(gpg $KEYSERVER --send-key "$SECRET_KEY_ID" 2>&1)
 	rc=$?
 	# TODO: Cleanup after failure to upload?
 	[[ $rc -ne 0 ]] && error 'Failed to upload key to server!' && echo "$GPG_OUT" && return $rc
@@ -357,7 +351,7 @@ get_public_key() {
 	local rc=0
 	local KEYID="$1"
 
-	GPG_OUT=$(gpg2 --recv-key "$KEYID" 2>&1)
+	GPG_OUT=$(gpg $KEYSERVER --recv-key "$KEYID" 2>&1)
 	rc=$?
 
 	if gpg --list-keys | grep -q "$KEYID"; then
@@ -401,7 +395,7 @@ encrypt_message() {
 
 	GPG_ERR="$(mktemp -t "$(basename $0).XXXXXXXX")"
 	trap handler EXIT SIGINT SIGQUIT SIGTERM
-	GPG_OUT="$(gpg2 -u "$SECRET_KEY_ID" -r "$RECIPIENT_KEYID" --armor --encrypt 2>"$GPG_ERR" <<<"$MESSAGE")"
+	GPG_OUT="$(gpg -u "$SECRET_KEY_ID" -r "$RECIPIENT_KEYID" --armor --encrypt 2>"$GPG_ERR" <<<"$MESSAGE")"
 
 	if [[ $rc -ne 0 ]]; then
 		error "Failed to encrypt message!"
@@ -505,11 +499,14 @@ sign_key(){
 
 	set -e
 	trap handler SIGTERM SIGINT SIGQUIT EXIT
+	update_keystore
 	MASTER_KEY=$(get_master_key)
 	KEY=$(find_key_id "$1")
+	get_public_key "$KEY"
+
 
 	gpg -u "$MASTER_KEY" --sign-key "$KEY"
-	gpg --send-key "$KEY"
+	gpg $KEYSERVER --send-key "$KEY"
 	trap - SIGTERM SIGINT SIGQUIT EXIT
 	success 'Signed and uploaded key'
 }
