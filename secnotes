@@ -131,11 +131,17 @@ init() {
 		fi
 	fi
 
+	handler() {
+		error 'Failed to install dependencies!'
+	}
+
+	trap handler SIGINT SIGQUIT SIGTERM EXIT
 	set -e
 	install_package gpg gnupg gnupg gnupg
 	install_package tput ncurses ncurses-bin ''
 	install_package clipit clipit clipit ''
 	set +e
+	trap - SIGINT SIGQUIT SIGTERM EXIT
 }
 
 update_keystore() {
