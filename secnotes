@@ -64,9 +64,9 @@ install_package() {
 	[[ -z $OS ]] && error 'Unable to detect OS!' && return 1
 
 	# Skip if package isn't defined for this OS
-	[[ $OS == 'arch' ]] && [[ -n $ARCH ]] && return 0
-	[[ $OS == 'debian' ]] && [[ -n $DEBIAN ]] && return 0
-	[[ $OS == 'mac' ]] && [[ -n $MAC ]] && return 0
+	[[ $OS == 'arch' ]] && [[ -z $ARCH ]] && return 0
+	[[ $OS == 'debian' ]] && [[ -z $DEBIAN ]] && return 0
+	[[ $OS == 'mac' ]] && [[ -z $MAC ]] && return 0
 
 	# check set status
 	#reset it afterwards?
