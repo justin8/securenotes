@@ -74,11 +74,11 @@ install_package() {
 	set +e
 	if ! which "$CHECK" &>/dev/null; then
 		if [[ $OS == 'arch' ]]; then
-			[[ $ARCH ]] && pacman -Sy --noconfirm $ARCH
+			[[ $ARCH ]] && sudo pacman -Sy --noconfirm $ARCH
 		fi
 
 		if [[ $OS == 'debian' ]]; then
-			[[ $DEBIAN ]] && apt-get install -y $DEBIAN
+			[[ $DEBIAN ]] && sudo apt-get install -y $DEBIAN
 		fi
 
 		if [[ $OS == 'mac' ]]; then
