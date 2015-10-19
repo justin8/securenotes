@@ -137,6 +137,8 @@ init() {
 
 	trap handler SIGINT SIGQUIT SIGTERM EXIT
 	set -e
+	install_package ssh openssh openssh-client ''
+	install_package git git git git
 	install_package gpg gnupg gnupg gnupg
 	install_package tput ncurses ncurses-bin ''
 	install_package clipit clipit clipit ''
@@ -471,19 +473,24 @@ set_keystore() {
 		rm -rf "$KEYSTORE_LOCATION"
 	fi
 
-	handler() {
-		error 'Failed to sync keystore!'
-		echo "$GIT_OUT"
-		exit 1
-	}
-
 	# Github shortname handling
 	if ! [[ $KEYSTORE =~ (@|:) ]]; then
 		KEYSTORE="git@github.com:$KEYSTORE"
 	fi
 
 	GIT_OUT=$(git clone "$KEYSTORE" "$KEYSTORE_LOCATION" 2>&1)
-	[[ $? -ne 0 ]] && error 'Failed to sync keystore' && echo "$GIT_OUT" && exit 1
+	rc=$?
+	if grep -q 'Permission denied' <<<"$GIT_OUT"; then
+		KEYSTORE=$(sed 's|git@github.com:|https://github.com/|' <<<"$KEYSTORE")
+		GIT_OUT=$(git clone "$KEYSTORE" "$KEYSTORE_LOCATION" 2>&1)
+		rc=$?
+	fi
+
+	if [[ $rc -ne 0 ]]; then
+		error 'Failed to sync keystore'
+		echo "$GIT_OUT"
+		exit 1
+	fi
 
 	success 'Synced keystore.'
 	return 0
