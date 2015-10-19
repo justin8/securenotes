@@ -25,6 +25,7 @@ fi
 
 [[ -f ~/.zshrc ]] && ! grep -q "$DIR" ~/.zshrc && echo "PATH=$DIR:"'$PATH' >> ~/.zshrc
 
+set -e
 $DIR/secnotes set-keystore $keystore
 $DIR/secnotes generate-key
 
