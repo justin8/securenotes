@@ -43,7 +43,7 @@ fi
 detect_os() {
 	uname -a | grep -qi darwin 2>/dev/null && echo mac && return 0
 	grep -qi 'arch' /etc/os-release 2>/dev/null && echo arch && return 0
-	grep -qiE '(ubuntu|debian)' /etc/os-release 2>/dev/null && echo ubuntu && return 0
+	grep -qiE '(ubuntu|debian)' /etc/os-release 2>/dev/null && echo debian && return 0
 	return 1
 }
 
