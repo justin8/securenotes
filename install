@@ -25,8 +25,8 @@ fi
 
 [[ -f ~/.zshrc ]] && ! grep -q "$DIR" ~/.zshrc && echo "PATH=$DIR:"'$PATH' >> ~/.zshrc
 
-$DIR/secnotes -s $keystore
-$DIR/secnotes -g
+$DIR/secnotes set-keystore $keystore
+$DIR/secnotes generate-key
 
 echo "$(tput setaf 2; tput bold)Success$(tput sgr0): Run 'secnotes' from anywhere to use the tool!"
 trap - EXIT
