@@ -104,7 +104,6 @@ trust_master_key() {
 	local MASTER_KEY=$(get_master_key)
 	local rc
 
-
 	if ! gpg --list-keys 2>&1 | grep -q "$MASTER_KEY"; then
 		warning "Master key not found. Downloading..."
 		get_public_key "$MASTER_KEY"
@@ -137,8 +136,6 @@ init() {
 	install_package tput ncurses ncurses-bin ''
 	install_package clipit clipit clipit ''
 	set +e
-
-	trust_master_key
 }
 
 update_keystore() {
@@ -474,16 +471,14 @@ set_keystore() {
 		exit 1
 	}
 
-	set -e
-	trap handler SIGTERM SIGINT SIGQUIT EXIT
 	# Github shortname handling
 	if ! [[ $KEYSTORE =~ (@|:) ]]; then
 		KEYSTORE="git@github.com:$KEYSTORE"
 	fi
-	GIT_OUT=$(git clone "$KEYSTORE" "$KEYSTORE_LOCATION" 2>&1)
 
-	set +e
-	trap - SIGTERM SIGINT SIGQUIT EXIT
+	GIT_OUT=$(git clone "$KEYSTORE" "$KEYSTORE_LOCATION" 2>&1)
+	[[ $? -ne 0 ]] && error
+
 	success 'Synced keystore.'
 	return 0
 }
@@ -569,6 +564,8 @@ case $1 in
 	generate-key) generate_key; exit $? ;;
 	sign-key) sign_key "$2"; exit $? ;;
 esac
+
+trust_master_key
 
 invalid_parameters() {
 	error "Invalid parameters"
