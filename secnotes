@@ -101,8 +101,13 @@ get_master_key() {
 trust_master_key() {
 	local OWNERTRUST
 	local GPG_OUT
-	local MASTER_KEY=$(get_master_key)
+	local MASTER_KEY
 	local rc
+
+	[[ ! -d $KEYSTORE_LOCATION ]] && error 'Please specify a keystore repository before using this tool' && exit 1
+
+	MASTER_KEY=$(get_master_key)
+	[[ $? -ne 0 ]] && error 'Unable to retrieve master key' && return 1
 
 	if ! gpg --list-keys 2>&1 | grep -q "$MASTER_KEY"; then
 		warning "Master key not found. Downloading..."
@@ -306,21 +311,26 @@ generate_key() {
 	# TODO: Cleanup after failure to upload?
 	[[ $rc -ne 0 ]] && error 'Failed to upload key to server!' && echo "$GPG_OUT" && return $rc
 
+	# TODO: Put in check for https keystore here, then suggest emailing ops@c9.io instead; or 'contact your administrator'
 	# Attempt to silently clear branches of the existing name before doing set -e
-	git -C "$KEYSTORE_LOCATION" branch -D "$EMAIL"
-	set -e
-	trap 'error Failed to upload new key to keystore' SIGQUIT SIGINT SIGTERM EXIT
-	# Save key to repo and push in a branch
-	echo "$SECRET_KEY_ID" > "$KEYSTORE_LOCATION/$EMAIL"
-	git -C "$KEYSTORE_LOCATION" checkout -b "$EMAIL"
-	git -C "$KEYSTORE_LOCATION" add "$EMAIL"
-	git -C "$KEYSTORE_LOCATION" config user.email "$EMAIL"
-	git -C "$KEYSTORE_LOCATION" config user.name "$(gpg --list-secret-keys|grep -A1 "$SECRET_KEY_ID"|grep uid|sed -r 's/.*uid\s*(\[.*\] )?([a-zA-Z ]*) <.*/\2/')"
-	git -C "$KEYSTORE_LOCATION" commit -m "New key for $EMAIL"
-	git -C "$KEYSTORE_LOCATION" push -f --set-upstream origin HEAD
-	git -C "$KEYSTORE_LOCATION" checkout master
-	trap - SIGQUIT SIGINT SIGTERM EXIT
-	set +e
+	if grep -q 'git@' $KEYSTORE_LOCATION/.git/config; then
+		git -C "$KEYSTORE_LOCATION" branch -D "$EMAIL"
+		set -e
+		trap 'error Failed to upload new key to keystore' SIGQUIT SIGINT SIGTERM EXIT
+		# Save key to repo and push in a branch
+		echo "$SECRET_KEY_ID" > "$KEYSTORE_LOCATION/$EMAIL"
+		git -C "$KEYSTORE_LOCATION" checkout -b "$EMAIL"
+		git -C "$KEYSTORE_LOCATION" add "$EMAIL"
+		git -C "$KEYSTORE_LOCATION" config user.email "$EMAIL"
+		git -C "$KEYSTORE_LOCATION" config user.name "$(gpg --list-secret-keys|grep -A1 "$SECRET_KEY_ID"|grep uid|sed -r 's/.*uid\s*(\[.*\] )?([a-zA-Z ]*) <.*/\2/')"
+		git -C "$KEYSTORE_LOCATION" commit -m "New key for $EMAIL"
+		git -C "$KEYSTORE_LOCATION" push -f --set-upstream origin HEAD
+		git -C "$KEYSTORE_LOCATION" checkout master
+		trap - SIGQUIT SIGINT SIGTERM EXIT
+		set +e
+	else
+		echo "Please notify your administrator of your new key ID: $SECRET_KEY_ID" >&2
+	fi
 
 	# Save settings for future use
 	echo "SECRET_KEY_ID=$SECRET_KEY_ID" > "$SETTINGS"
